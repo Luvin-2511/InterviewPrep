@@ -26,7 +26,9 @@ const useInterview = () => {
       setreport(response.interviewReport);
       return response;
     } catch (err) {
-      console.log(err);
+      console.error("Interview generation error:", err);
+      const msg = err?.response?.data?.message || err?.message || "Failed to generate report";
+      throw new Error(msg);
     } finally {
       setloading(false);
     }

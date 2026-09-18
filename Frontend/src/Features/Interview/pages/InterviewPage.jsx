@@ -716,6 +716,7 @@ export default function InterviewPage() {
   const [resume, setResume] = useState(null);
   const [selfDesc, setSelfDesc] = useState("");
   const [jobDesc, setJobDesc] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
   const { handleInterviewReport, loading } = useInterview();
 
   const menuRef = useRef(null);
@@ -767,16 +768,24 @@ export default function InterviewPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!jobDesc || !resume || !selfDesc) return;
+    setErrorMessage("");
+    if (!jobDesc || !resume || !selfDesc) {
+      setErrorMessage("Please complete all 3 fields (Job Description, Resume PDF, and Self-Description) before continuing.");
+      return;
+    }
 
-    const response = await handleInterviewReport({
-      jobDescription: jobDesc,
-      resume: resume,
-      selfDescription: selfDesc,
-    });
+    try {
+      const response = await handleInterviewReport({
+        jobDescription: jobDesc,
+        resume: resume,
+        selfDescription: selfDesc,
+      });
 
-    if (response?.interviewReport?._id) {
-      nav(`/report/${response.interviewReport._id}`);
+      if (response?.interviewReport?._id) {
+        nav(`/report/${response.interviewReport._id}`);
+      }
+    } catch (err) {
+      setErrorMessage(err.message || "Failed to generate report. Please check your AI API key and connection.");
     }
   };
 
@@ -1011,6 +1020,35 @@ export default function InterviewPage() {
       </div>
 
       {/* ── CTA ── */}
+      {errorMessage && (
+        <div style={{
+          margin: "0 40px 16px",
+          padding: "14px 20px",
+          background: "rgba(255, 77, 77, 0.1)",
+          border: "1px solid rgba(255, 107, 107, 0.4)",
+          color: "#ff6b6b",
+          borderRadius: "4px",
+          fontFamily: "var(--mono)",
+          fontSize: "13px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px",
+          zIndex: 2,
+          position: "relative"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span>⚠️</span>
+            <span>{errorMessage}</span>
+          </div>
+          <button 
+            onClick={() => setErrorMessage("")}
+            style={{ background: "transparent", border: "none", color: "#ff6b6b", cursor: "pointer", fontSize: "16px" }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <div className="ip-cta">
         <div className="ip-cta__left">
           <div className="ip-cta__status">
