@@ -63,6 +63,7 @@ function AnimatedRoutes() {
                         </Private>
                     }
                 />
+                <Route path="*" element={<NotFound />} />
             </Routes>
         </PageTransition>
     )
