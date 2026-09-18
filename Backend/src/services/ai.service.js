@@ -5,7 +5,7 @@ const mistral = new Mistral({
   apiKey: process.env.MISTRAL_KEY,
 });
 
-const MODEL = "mistral-large-latest";
+const MODEL = process.env.MISTRAL_MODEL || "mistral-small-latest";
 
 // Terminal UI Colors for Agent Logs
 const colors = {
