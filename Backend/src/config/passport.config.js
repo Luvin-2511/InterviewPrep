@@ -9,7 +9,9 @@ passport.use(
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
             callbackURL: process.env.BACKEND_URL
                 ? `${process.env.BACKEND_URL}/api/auth/google/callback`
-                : '/api/auth/google/callback',
+                : (process.env.NODE_ENV === 'production'
+                    ? 'https://interviewprep-rlud.onrender.com/api/auth/google/callback'
+                    : 'http://localhost:3000/api/auth/google/callback'),
             proxy: true,
         },
         async (accessToken, refreshToken, profile, done) => {
