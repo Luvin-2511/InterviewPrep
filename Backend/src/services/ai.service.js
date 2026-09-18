@@ -16,6 +16,36 @@ const colors = {
   error: "\x1b[31m", // Red
 };
 
+/**
+ * Robust retry handler for Mistral API calls to handle free-tier rate limits (429)
+ */
+async function callMistralWithRetry(apiFn, maxRetries = 4, initialDelayMs = 2000) {
+  let attempt = 0;
+  while (attempt < maxRetries) {
+    try {
+      return await apiFn();
+    } catch (error) {
+      attempt++;
+      const isRateLimit =
+        error?.status === 429 ||
+        error?.raw_status_code === 429 ||
+        error?.statusCode === 429 ||
+        (error?.message &&
+          (error.message.includes("429") ||
+            error.message.includes("Rate limit") ||
+            error.message.includes("rate_limited")));
+
+      if (isRateLimit && attempt < maxRetries) {
+        const delay = initialDelayMs * Math.pow(2, attempt - 1);
+        console.warn(`${colors.agent}[Mistral Rate Limit 429] ⏳ Waiting ${delay}ms before retry attempt ${attempt}/${maxRetries}...${colors.reset}`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      } else {
+        throw error;
+      }
+    }
+  }
+}
+
 // ==========================================
 // 🛠️ TOOL IMPLEMENTATIONS (Agent Capabilities)
 // ==========================================
@@ -62,32 +92,41 @@ const agentTools = [
 // 🤖 AGENT 1: CONTEXT GATHERER (Tool Calling)
 // ==========================================
 async function gatherCompanyContext(jobDescription) {
-  console.log(`\n${colors.agent}[Agent 1: Context Gatherer] 🧠 Analyzing Job Description for entities...${colors.reset}`);
-  
-  const prompt = `Analyze this job description. If a company name is explicitly mentioned or strongly implied, use the fetchCompanyWiki tool to gather context about their business and culture.\n\nJob Description:\n${jobDescription}`;
+  try {
+    console.log(`\n${colors.agent}[Agent 1: Context Gatherer] 🧠 Analyzing Job Description for entities...${colors.reset}`);
+    
+    const prompt = `Analyze this job description. If a company name is explicitly mentioned or strongly implied, use the fetchCompanyWiki tool to gather context about their business and culture.\n\nJob Description:\n${jobDescription.slice(0, 2000)}`;
 
-  const response = await mistral.chat.complete({
-    model: MODEL,
-    messages: [{ role: "user", content: prompt }],
-    tools: agentTools,
-    toolChoice: "auto",
-  });
+    const response = await callMistralWithRetry(() =>
+      mistral.chat.complete({
+        model: MODEL,
+        messages: [{ role: "user", content: prompt }],
+        tools: agentTools,
+        toolChoice: "auto",
+      }),
+      2,
+      1500
+    );
 
-  const message = response.choices[0].message;
-  
-  // Check if the agent decided to use a tool
-  if (message.toolCalls && message.toolCalls.length > 0) {
-    const toolCall = message.toolCalls[0];
-    if (toolCall.function.name === "fetchCompanyWiki") {
-      const args = JSON.parse(toolCall.function.arguments);
-      console.log(`${colors.agent}[Agent 1: Context Gatherer] 🎯 Identified Target Company: ${args.companyName}. Triggering Tool...${colors.reset}`);
-      const companyInfo = await fetchCompanyWiki(args.companyName);
-      return `Company Context (${args.companyName}): ${companyInfo}`;
+    const message = response.choices[0].message;
+    
+    // Check if the agent decided to use a tool
+    if (message.toolCalls && message.toolCalls.length > 0) {
+      const toolCall = message.toolCalls[0];
+      if (toolCall.function.name === "fetchCompanyWiki") {
+        const args = JSON.parse(toolCall.function.arguments);
+        console.log(`${colors.agent}[Agent 1: Context Gatherer] 🎯 Identified Target Company: ${args.companyName}. Triggering Tool...${colors.reset}`);
+        const companyInfo = await fetchCompanyWiki(args.companyName);
+        return `Company Context (${args.companyName}): ${companyInfo}`;
+      }
     }
+    
+    console.log(`${colors.agent}[Agent 1: Context Gatherer] ℹ️ No specific company identified. Proceeding with generic context.${colors.reset}`);
+    return "Company Context: Generic or undisclosed company.";
+  } catch (error) {
+    console.warn(`${colors.agent}[Agent 1: Context Gatherer] ⚠️ Skipping dynamic context gathering due to rate limit/error: ${error.message}${colors.reset}`);
+    return "Company Context: Generic or undisclosed company.";
   }
-  
-  console.log(`${colors.agent}[Agent 1: Context Gatherer] ℹ️ No specific company identified. Proceeding with generic context.${colors.reset}`);
-  return "Company Context: Generic or undisclosed company.";
 }
 
 // ==========================================
@@ -98,10 +137,12 @@ async function generateInterviewReport({
   resume,
   jobDescription,
 }) {
-  
   // Step 1: Orchestrate the context gathering agent
   const companyContext = await gatherCompanyContext(jobDescription);
   
+  // Rate pacing buffer for free-tier limits
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+
   console.log(`${colors.agent}[Agent 2: Report Synthesizer] ✍️ Generating tailored Interview Report (Strict JSON)...${colors.reset}`);
 
   // Step 2: Final synthesis
@@ -134,11 +175,15 @@ Self Description: ${selfDescription}
 Job Description: ${jobDescription}
 `;
 
-  const response = await mistral.chat.complete({
-    model: MODEL,
-    messages: [{ role: "user", content: prompt }],
-    responseFormat: { type: "json_object" },
-  });
+  const response = await callMistralWithRetry(() =>
+    mistral.chat.complete({
+      model: MODEL,
+      messages: [{ role: "user", content: prompt }],
+      responseFormat: { type: "json_object" },
+    }),
+    5,
+    2500
+  );
 
   const text = response.choices[0].message.content;
   console.log(`${colors.success}✨ Agent Pipeline Complete! Successfully generated JSON Report.${colors.reset}\n`);
@@ -196,11 +241,15 @@ RULES:
 OUTPUT: Return ONLY a JSON object with a single key "resume" whose value is the complete HTML document string. No extra text.
 `;
 
-  const response = await mistral.chat.complete({
-    model: MODEL,
-    messages: [{ role: "user", content: prompt }],
-    responseFormat: { type: "json_object" },
-  });
+  const response = await callMistralWithRetry(() =>
+    mistral.chat.complete({
+      model: MODEL,
+      messages: [{ role: "user", content: prompt }],
+      responseFormat: { type: "json_object" },
+    }),
+    5,
+    2500
+  );
 
   const text = response.choices[0].message.content;
   const result = JSON.parse(text);
