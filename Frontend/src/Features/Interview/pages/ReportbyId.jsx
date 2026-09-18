@@ -691,11 +691,11 @@ const QCard = ({ item, index, accentColor }) => {
         <div className="rp-qcard__body">
           <div className="rp-qcard__block rp-qcard__block--intent">
             <span className="rp-qcard__block-label">Interviewer Intent</span>
-            <p>{item.intention}</p>
+            <p>{typeof item.intention === 'object' ? JSON.stringify(item.intention, null, 2) : item.intention}</p>
           </div>
           <div className="rp-qcard__block rp-qcard__block--answer">
             <span className="rp-qcard__block-label">Model Answer</span>
-            <p>{item.answer}</p>
+            <p style={{ whiteSpace: 'pre-wrap' }}>{typeof item.answer === 'object' ? JSON.stringify(item.answer, null, 2) : item.answer}</p>
           </div>
         </div>
       )}
@@ -1221,7 +1221,7 @@ export default function ReportByIdPage() {
                       {day.tasks?.map((task, j) => (
                         <li key={j} className="rp-day__task">
                           <span className="rp-day__task-dot" />
-                          {task}
+                          {typeof task === 'object' ? JSON.stringify(task) : task}
                         </li>
                       ))}
                     </ul>
