@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const app = express();
+app.set("trust proxy", 1);
 const authRoutes = require("./routes/auth.routes");
 const interviewRouter = require("./routes/interview.route");
 const cors = require('cors')
@@ -15,12 +16,19 @@ app.use(cors({
     credentials: true
 }))
 
+app.get('/',(req,res)=>{
+    res.status(200).json({
+        success:true,
+        message: "Server working Perfectly !"
+    })
+})
+
 // Session needed briefly for passport OAuth handshake only
 app.use(session({
     secret: process.env.SESSION_SECRET || 'fallback_secret',
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false }
+    cookie: { secure: process.env.NODE_ENV === "production", sameSite: process.env.NODE_ENV === "production" ? "none" : "lax" }
 }))
 
 app.use(passport.initialize())

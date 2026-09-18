@@ -55,7 +55,13 @@ async function registerController(req, res) {
         },
     );
 
-    res.cookie("token", token);
+    const isProd = process.env.NODE_ENV === 'production';
+    res.cookie("token", token, {
+        httpOnly: true,
+        sameSite: isProd ? 'none' : 'lax',
+        secure: isProd,
+        maxAge: 24 * 60 * 60 * 1000
+    });
 
     res.status(201).json({
         message: "User created successfully",
@@ -139,7 +145,12 @@ async function logoutController(req, res) {
     const blackList = await tokenModel.create({
         token: token
     })
-    res.clearCookie("token")
+    const isProd = process.env.NODE_ENV === 'production';
+    res.clearCookie("token", {
+        httpOnly: true,
+        sameSite: isProd ? 'none' : 'lax',
+        secure: isProd
+    });
 
     return res.status(200).json({
         message: "User logout successfully!",
