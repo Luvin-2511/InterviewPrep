@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 
-const StaticNoiseBackground = ({ opacity = 0.045 }) => {
+const StaticNoiseBackground = ({ opacity = 0.018 }) => {
   const canvasRef = useRef(null)
 
   useEffect(() => {
@@ -83,7 +83,7 @@ const StaticNoiseBackground = ({ opacity = 0.045 }) => {
           inset: 0;
           width: 100%;
           height: 100%;
-          background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0) 30%, rgba(0, 0, 0, 0.4) 100%);
+          background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0) 30%, rgba(0, 0, 0, 0.15) 100%);
         }
 
         .gn-frame div {
@@ -92,8 +92,8 @@ const StaticNoiseBackground = ({ opacity = 0.045 }) => {
           top: -20%;
           width: 100%;
           height: 20%;
-          background-color: rgba(0, 0, 0, 0.04);
-          box-shadow: 0 0 16px rgba(0, 0, 0, 0.1);
+          background-color: rgba(0, 0, 0, 0.015);
+          box-shadow: 0 0 12px rgba(0, 0, 0, 0.04);
           animation: gn-scanline 14s linear infinite;
         }
 

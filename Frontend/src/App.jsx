@@ -34,7 +34,7 @@ const App = () => {
 
   return (
     <>
-      <StaticNoiseBackground opacity={0.045} />
+      <StaticNoiseBackground opacity={0.018} />
       <GlobalCursor />
       <AppRoutes />
     </>
