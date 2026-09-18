@@ -1,0 +1,9 @@
+const selfDescription = `
+I am a passionate full-stack developer with a strong foundation in JavaScript, Node.js, and React. I enjoy building scalable web applications and solving real-world problems through clean and efficient code. I have experience working with REST APIs, MongoDB, and modern frontend frameworks. I am a quick learner, a team player, and always eager to explore new technologies. My goal is to contribute to impactful projects while continuously improving my technical and problem-solving skills.
+`
+
+const resume = `Full Stack Developer with experience in building and deploying web applications using MERN stack (MongoDB, Express, React, Node.js). Skilled in designing RESTful APIs, implementing authentication systems using JWT, and optimizing application performance. Developed projects including a movie streaming platform, a YouTube downloader with FFmpeg integration, and an interview preparation app with AI-based features. Familiar with Git, Docker basics, and cloud deployment. Strong understanding of data structures, algorithms, and software development best practices.`
+
+const jobDescription = `We are looking for a Full Stack Developer to join our dynamic team. The candidate will be responsible for developing scalable web applications, designing RESTful APIs, and collaborating with cross-functional teams to deliver high-quality products. Required skills include proficiency in JavaScript, experience with React and Node.js, knowledge of databases like MongoDB, and familiarity with version control systems like Git. The ideal candidate should have strong problem-solving skills, attention to detail, and a passion for learning new technologies.`
+
+module.exports = {selfDescription,resume,jobDescription}

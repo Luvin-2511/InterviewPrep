@@ -1,0 +1,71 @@
+.magnetic-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  margin: -40px;
+  cursor: none;
+}
+
+.magnetic-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 15px 38px;
+  border: none;
+  border-radius: 100px;
+  background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+  color: #020f0a;
+  font-size: 15px;
+  font-weight: 700;
+  font-family: "DM Sans", sans-serif;
+  letter-spacing: 0.04em;
+  cursor: none;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(52, 211, 153, 0.35);
+  will-change: transform;
+  outline: none;
+}
+.magnetic-btn::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #34d399, #10b981);
+  opacity: 0;
+  z-index: -1;
+  filter: blur(12px);
+  transition: opacity 0.3s ease;
+}
+.magnetic-btn--near {
+  box-shadow: 0 16px 48px rgba(52, 211, 153, 0.5), 0 0 0 1px rgba(52, 211, 153, 0.3);
+}
+.magnetic-btn--near::before {
+  opacity: 0.7;
+}
+.magnetic-btn__inner {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  will-change: transform;
+  pointer-events: none;
+}
+.magnetic-btn__shine {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.22) 50%, transparent 70%);
+  background-size: 200% 100%;
+  background-position: -200% center;
+  border-radius: inherit;
+  transition: background-position 0.55s ease;
+  pointer-events: none;
+}
+.magnetic-btn--near .magnetic-btn__shine {
+  background-position: 200% center;
+}
+.magnetic-btn:active {
+  box-shadow: 0 4px 16px rgba(129, 140, 248, 0.4);
+}/*# sourceMappingURL=Magneticbutton.css.map */
