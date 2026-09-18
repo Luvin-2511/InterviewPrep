@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import AppRoutes from "./AppRoutes.jsx";
 import GlobalCursor from "./Features/Shared/components/GlobalCursor.jsx";
+import StaticNoiseBackground from "./Features/Shared/components/StaticNoiseBackground.jsx";
 import AuthProvider from "./Features/Auth/auth.context.jsx";
 import Lenis from "lenis";
 import useAuth from "./Features/Auth/hooks/useAuth.jsx";
@@ -33,6 +34,7 @@ const App = () => {
 
   return (
     <>
+      <StaticNoiseBackground opacity={0.045} />
       <GlobalCursor />
       <AppRoutes />
     </>

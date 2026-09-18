@@ -8,6 +8,7 @@ import Private from './Features/Interview/components/Private.jsx';
 import ReportPage from './Features/Interview/pages/ReportPage.jsx';
 import ReportByIdPage from './Features/Interview/pages/ReportbyId.jsx';
 import PageTransition from './Features/Auth/components/PageTransition.jsx';
+import NotFound from './Features/Shared/components/NotFound.jsx';
 
 function AnimatedRoutes() {
     const location = useLocation()
