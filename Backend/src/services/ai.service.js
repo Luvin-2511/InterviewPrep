@@ -6,37 +6,98 @@ const MISTRAL_MODELS = [
   process.env.MISTRAL_MODEL,
   "open-mistral-nemo",
   "mistral-small-latest",
-  "open-mistral-7b"
+  "open-mistral-7b",
 ].filter(Boolean);
 
-// Terminal UI Colors for Agent Logs
 const colors = {
   reset: "\x1b[0m",
-  agent: "\x1b[36m", // Cyan
-  tool: "\x1b[35m",  // Magenta
-  success: "\x1b[32m", // Green
-  warn: "\x1b[33m",   // Yellow
-  error: "\x1b[31m", // Red
+  agent: "\x1b[36m",
+  tool: "\x1b[35m",
+  success: "\x1b[32m",
+  warn: "\x1b[33m",
+  error: "\x1b[31m",
 };
 
 // ==========================================
-// 🛠️ TOOL 1: FAST COMPANY EXTRACTION & WIKI
+// 🔧 ROBUST JSON REPAIR UTILITY
+// ==========================================
+function safeJSONParse(raw) {
+  if (!raw) throw new Error("Empty response from AI");
+
+  // Strip markdown code fences
+  let clean = raw
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim();
+
+  // Extract the outermost JSON object
+  const start = clean.indexOf("{");
+  const end = clean.lastIndexOf("}");
+  if (start !== -1 && end !== -1 && end > start) {
+    clean = clean.slice(start, end + 1);
+  }
+
+  // Try direct parse first
+  try {
+    return JSON.parse(clean);
+  } catch (e1) {
+    // Attempt repair: remove trailing commas before } or ]
+    const repaired = clean
+      .replace(/,\s*([}\]])/g, "$1")
+      // Remove control characters that break JSON
+      .replace(/[\x00-\x1F\x7F]/g, " ");
+
+    try {
+      return JSON.parse(repaired);
+    } catch (e2) {
+      // Last resort: try to extract partial data with a forgiving regex
+      const result = {};
+
+      // Extract score
+      const scoreMatch = clean.match(/"score"\s*:\s*(\d+)/);
+      if (scoreMatch) result.score = Number(scoreMatch[1]);
+
+      // Extract title
+      const titleMatch = clean.match(/"title"\s*:\s*"([^"]+)"/);
+      if (titleMatch) result.title = titleMatch[1];
+
+      if (result.score !== undefined || result.title) {
+        // Return with empty arrays, sanitizer in controller will fill defaults
+        return {
+          score: result.score || 75,
+          title: result.title || "Interview Prep",
+          technicalQuestions: [],
+          behavioralQuestions: [],
+          skillGap: [],
+          preparationPlan: [],
+        };
+      }
+
+      throw new Error(`JSON parse failed after repair attempt: ${e2.message.slice(0, 120)}`);
+    }
+  }
+}
+
+// ==========================================
+// 🛠️ COMPANY CONTEXT (no extra API call)
 // ==========================================
 function extractCompanyFromJobDescription(text) {
   if (!text) return null;
   const patterns = [
-    /(?:at|@|for|joining|join|about)\s+([A-Z][A-Za-z0-9&]{1,25})/i,
+    /(?:at|@|for|joining|join|about)\s+([A-Z][A-Za-z0-9&]{1,25})/,
     /(?:company|organization|client|employer):\s*([A-Z][A-Za-z0-9&]{1,25})/i,
-    /([A-Z][A-Za-z0-9&]{1,25})\s+(?:is looking for|is hiring|is seeking)/i
+    /([A-Z][A-Za-z0-9&]{1,25})\s+(?:is looking for|is hiring|is seeking)/,
   ];
+  const ignoreWords = new Set([
+    "The","A","An","We","Our","This","You","Your","Senior","Junior",
+    "Lead","Staff","Principal","Software","Backend","Frontend","Fullstack",
+    "Engineer","Developer","Manager","Tech","The","Looking","Seeking","Hiring",
+  ]);
   for (const pattern of patterns) {
     const match = text.match(pattern);
-    if (match && match[1]) {
-      const candidate = match[1].trim();
-      const ignoreWords = ["The", "A", "An", "We", "Our", "This", "You", "Your", "Senior", "Junior", "Lead", "Staff", "Principal", "Software", "Backend", "Frontend", "Fullstack", "Engineer", "Developer", "Manager", "Tech"];
-      if (!ignoreWords.includes(candidate)) {
-        return candidate;
-      }
+    if (match && match[1] && !ignoreWords.has(match[1].trim())) {
+      return match[1].trim();
     }
   }
   return null;
@@ -44,224 +105,199 @@ function extractCompanyFromJobDescription(text) {
 
 async function fetchCompanyWiki(companyName) {
   try {
-    console.log(`${colors.tool}[Tool: Web Search] 🌐 Fetching live Wikipedia data for: ${companyName}${colors.reset}`);
     const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(companyName)}`;
-    const response = await fetch(url);
-    if (!response.ok) {
-      return `No public Wikipedia information found for ${companyName}.`;
-    }
+    const response = await fetch(url, { signal: AbortSignal.timeout(3000) });
+    if (!response.ok) return "";
     const data = await response.json();
-    console.log(`${colors.success}[Tool: Web Search] ✅ Retrieved company context for ${companyName}!${colors.reset}`);
-    return data.extract || `Limited information found for ${companyName}.`;
-  } catch (error) {
-    return `Error fetching company info for ${companyName}.`;
+    // Return max 300 chars of extract to keep prompt size small
+    return (data.extract || "").slice(0, 300);
+  } catch {
+    return "";
   }
 }
 
-async function gatherCompanyContext(jobDescription) {
+async function getCompanyContext(jobDescription) {
   const company = extractCompanyFromJobDescription(jobDescription);
   if (company) {
-    const wiki = await fetchCompanyWiki(company);
-    return `Company Context (${company}): ${wiki}`;
+    const info = await fetchCompanyWiki(company);
+    if (info) return `Company: ${company}. ${info}`;
   }
-  return "Company Context: Generic tech company interview.";
+  return "";
 }
 
 // ==========================================
-// 🤖 MULTI-MODEL MISTRAL & GEMINI RUNNER
+// 🤖 GEMINI FALLBACK
 // ==========================================
 async function callGeminiAPI(prompt) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("No GEMINI_API_KEY configured");
-
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: "application/json" }
-    })
+      generationConfig: { responseMimeType: "application/json", maxOutputTokens: 2048 },
+    }),
   });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Gemini API error: ${res.status} ${errText}`);
-  }
-
+  if (!res.ok) throw new Error(`Gemini API error: ${res.status}`);
   const data = await res.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Empty response from Gemini");
-  return JSON.parse(text);
+  return safeJSONParse(text);
 }
 
-async function callMistralWithModelFallback(prompt) {
+// ==========================================
+// 🤖 MULTI-MODEL RUNNER WITH ROBUST PARSING
+// ==========================================
+async function callAI(prompt) {
   if (!process.env.MISTRAL_KEY && process.env.GEMINI_API_KEY) {
-    return await callGeminiAPI(prompt);
+    return callGeminiAPI(prompt);
   }
 
-  const mistral = new Mistral({
-    apiKey: process.env.MISTRAL_KEY,
-  });
-
+  const mistral = new Mistral({ apiKey: process.env.MISTRAL_KEY });
   let lastError = null;
 
   for (const model of MISTRAL_MODELS) {
-    console.log(`${colors.agent}[AI Agent] 🚀 Generating with model: ${model}...${colors.reset}`);
-    
-    // Try up to 2 retries per model with backoff
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    console.log(`${colors.agent}[AI] Trying model: ${model}...${colors.reset}`);
+    for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         const response = await mistral.chat.complete({
-          model: model,
+          model,
           messages: [{ role: "user", content: prompt }],
-          ...(model !== "open-mistral-7b" ? { responseFormat: { type: "json_object" } } : {})
+          responseFormat: { type: "json_object" },
+          maxTokens: 2000,
         });
-
-        const rawContent = response.choices[0].message.content;
-        // Clean JSON markdown fences if present
-        const cleanContent = rawContent.replace(/^[\s\S]*?(\{[\s\S]*\})[\s\S]*$/, "$1");
-        const parsed = JSON.parse(cleanContent);
-        console.log(`${colors.success}✨ Generation succeeded with ${model}!${colors.reset}`);
+        const raw = response.choices[0].message.content;
+        const parsed = safeJSONParse(raw);
+        console.log(`${colors.success}✨ Succeeded with ${model}!${colors.reset}`);
         return parsed;
-      } catch (error) {
-        lastError = error;
-        const isRateLimit =
-          error?.status === 429 ||
-          error?.raw_status_code === 429 ||
-          error?.message?.includes("429") ||
-          error?.message?.includes("Rate limit") ||
-          error?.message?.includes("rate_limited");
+      } catch (err) {
+        lastError = err;
+        const isRate =
+          err?.status === 429 ||
+          err?.raw_status_code === 429 ||
+          (err?.message || "").includes("429") ||
+          (err?.message || "").includes("rate_limit");
 
-        if (isRateLimit) {
-          console.warn(`${colors.warn}[Rate Limit 429 on ${model}] Attempt ${attempt}/2: Backing off 1.5s...${colors.reset}`);
-          await new Promise(r => setTimeout(r, 1500 * attempt));
+        if (isRate && attempt < 3) {
+          const delay = 2000 * attempt;
+          console.warn(`${colors.warn}[Rate limit on ${model}] Waiting ${delay}ms...${colors.reset}`);
+          await new Promise((r) => setTimeout(r, delay));
         } else {
-          console.warn(`${colors.warn}[Error on ${model}]: ${error.message}. Trying next fallback model...${colors.reset}`);
-          break; // Try next model immediately for non-rate-limit errors
+          console.warn(`${colors.warn}[Error on ${model}]: ${err.message?.slice(0, 80)}${colors.reset}`);
+          break;
         }
       }
     }
   }
 
-  // If Mistral is completely rate limited and GEMINI_API_KEY is available, fallback to Gemini
   if (process.env.GEMINI_API_KEY) {
-    console.log(`${colors.agent}[AI Fallback] 🌐 Mistral limit reached. Falling back to Google Gemini...${colors.reset}`);
+    console.log(`${colors.agent}[Fallback] Switching to Gemini...${colors.reset}`);
     try {
       return await callGeminiAPI(prompt);
     } catch (gErr) {
-      console.error("Gemini fallback failed:", gErr);
+      console.error("Gemini fallback failed:", gErr.message);
     }
   }
 
-  throw lastError || new Error("All AI models are currently rate limited. Please try again in a few seconds.");
+  throw lastError || new Error("All AI models failed. Please try again in a moment.");
 }
 
 // ==========================================
-// 🤖 AGENT 2: REPORT SYNTHESIZER
+// 🤖 INTERVIEW REPORT GENERATOR
 // ==========================================
-async function generateInterviewReport({
-  selfDescription,
-  resume,
-  jobDescription,
-}) {
-  console.log(`\n${colors.agent}[Agent 1: Context Gatherer] 🧠 Analyzing Job Description...${colors.reset}`);
-  const companyContext = await gatherCompanyContext(jobDescription);
-  
-  console.log(`${colors.agent}[Agent 2: Report Synthesizer] ✍️ Generating tailored Interview Report (Strict JSON)...${colors.reset}`);
+async function generateInterviewReport({ selfDescription, resume, jobDescription }) {
+  // Truncate inputs to prevent prompt overflow and JSON corruption
+  const truncatedResume = (resume || "").slice(0, 1500);
+  const truncatedJD = (jobDescription || "").slice(0, 1000);
+  const truncatedSelf = (selfDescription || "").slice(0, 500);
 
-  const prompt = `
-You are an expert Technical Interviewer and HR Manager.
-Generate a tailored interview preparation report.
+  console.log(`${colors.agent}[Agent] Gathering company context...${colors.reset}`);
+  const companyContext = await getCompanyContext(truncatedJD);
 
-DYNAMIC CONTEXT:
-- ${companyContext}
-(Use this context to tailor the behavioral questions specifically to the company's domain and history, if available).
+  console.log(`${colors.agent}[Agent] Generating interview report...${colors.reset}`);
 
-STRICT RULES:
-- Return ONLY valid JSON.
-- Do NOT include explanations or markdown.
-- Follow the schema EXACTLY.
-- Do NOT add extra fields.
+  const prompt = `You are a senior technical interviewer. Generate a concise interview prep report as VALID JSON only.
+${companyContext ? `Context: ${companyContext}` : ""}
 
-REQUIRED JSON STRUCTURE:
+RULES:
+- Output ONLY raw JSON, no markdown, no explanation, no code fences
+- Keep each answer under 150 words as plain text (NO nested objects or arrays inside string fields)
+- Generate exactly 5 technical questions, 4 behavioral questions, 4 skill gaps, 5 prep days
+
+JSON schema (fill all "..." with strings):
 {
-  "technicalQuestions": [{ "question": "...", "intention": "...", "answer": "..." }],
-  "behavioralQuestions": [{ "question": "...", "intention": "...", "answer": "..." }],
-  "skillGap": [{ "skill": "...", "severity": "Low|Medium|High" }],
-  "preparationPlan": [{ "day": "Day 1", "focus": "...", "tasks": ["..."] }],
-  "title": "Title in 2 to 3 words",
-  "score": 0
+  "title": "2-3 word title",
+  "score": 78,
+  "technicalQuestions": [
+    {"question":"...","intention":"...","answer":"..."},
+    {"question":"...","intention":"...","answer":"..."},
+    {"question":"...","intention":"...","answer":"..."},
+    {"question":"...","intention":"...","answer":"..."},
+    {"question":"...","intention":"...","answer":"..."}
+  ],
+  "behavioralQuestions": [
+    {"question":"...","intention":"...","answer":"..."},
+    {"question":"...","intention":"...","answer":"..."},
+    {"question":"...","intention":"...","answer":"..."},
+    {"question":"...","intention":"...","answer":"..."}
+  ],
+  "skillGap": [
+    {"skill":"...","severity":"High"},
+    {"skill":"...","severity":"Medium"},
+    {"skill":"...","severity":"Low"},
+    {"skill":"...","severity":"Medium"}
+  ],
+  "preparationPlan": [
+    {"day":"Day 1","focus":"...","tasks":["...","...","..."]},
+    {"day":"Day 2","focus":"...","tasks":["...","...","..."]},
+    {"day":"Day 3","focus":"...","tasks":["...","...","..."]},
+    {"day":"Day 4","focus":"...","tasks":["...","...","..."]},
+    {"day":"Day 5","focus":"...","tasks":["...","...","..."]}
+  ]
 }
 
-Resume: ${resume}
-Self Description: ${selfDescription}
-Job Description: ${jobDescription}
+Resume summary: ${truncatedResume}
+Candidate: ${truncatedSelf}
+Role: ${truncatedJD}
 `;
 
-  const reportData = await callMistralWithModelFallback(prompt);
-  console.log(`${colors.success}✨ Report synthesized successfully!${colors.reset}\n`);
-  return reportData;
+  const data = await callAI(prompt);
+  console.log(`${colors.success}✨ Report generated!${colors.reset}`);
+  return data;
 }
 
 // ==========================================
-// 🤖 AGENT 3: ATS RESUME BUILDER
+// 🤖 ATS RESUME PDF GENERATOR
 // ==========================================
 async function convertHTMLtoPDF(htmlContent) {
   const browser = await puppeteer.launch({
     headless: "new",
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu"
-    ],
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
   });
   const page = await browser.newPage();
-  await page.setContent(htmlContent, {
-    waitUntil: "networkidle2",
-  });
-  const pdfBuffer = await page.pdf({
-    format: "A4",
-    printBackground: true,
-  });
+  await page.setContent(htmlContent, { waitUntil: "networkidle2" });
+  const pdfBuffer = await page.pdf({ format: "A4", printBackground: true });
   await browser.close();
   return pdfBuffer;
 }
 
 async function generateResumePDF({ resume, jobDescription, selfDescription }) {
-  console.log(`\n${colors.agent}[Agent 3: ATS Architect] 📄 Generating ATS-Optimized HTML Resume...${colors.reset}`);
-  
-  const prompt = `
-You are an expert ATS Resume Architect Agent.
-
-Create a STUNNING, ATS-optimized HTML resume tailored to this job.
-
+  console.log(`${colors.agent}[Agent] Generating ATS Resume...${colors.reset}`);
+  const prompt = `You are an ATS Resume expert. Output ONLY valid JSON with a single key "resume" containing a complete HTML document as a string value.
 INPUTS:
-- Current Resume: ${resume}
-- Job Description: ${jobDescription}  
-- Candidate's Self Description: ${selfDescription}
+- Resume: ${(resume || "").slice(0, 1200)}
+- Job: ${(jobDescription || "").slice(0, 600)}
+- About: ${(selfDescription || "").slice(0, 300)}
+RULES: Single-column layout, Google Fonts Inter, dark navy headings, embedded CSS in <style> tag, no external images. Output ONLY {"resume":"<html>...</html>"}.`;
 
-RULES:
-- Tailor EVERY bullet point to match keywords from the job description
-- Quantify achievements (e.g., "Increased performance by 40%")
-- Use strong action verbs (Architected, Delivered, Scaled)
-- Remove irrelevant experience
-- Single/two-column layout, Google Fonts (Inter/Roboto)
-- Dark navy (#1a2332) for headings, styled skills chips.
-- Embed ALL styles in a <style> tag inside <head>.
-- Do NOT use external images.
-
-OUTPUT: Return ONLY a JSON object with a single key "resume" whose value is the complete HTML document string. No extra text.
-`;
-
-  const result = await callMistralWithModelFallback(prompt);
+  const result = await callAI(prompt);
   const htmlContent = result.resume;
-  
-  console.log(`${colors.tool}[Tool: Puppeteer] 🖨️ Converting HTML to PDF...${colors.reset}`);
+  if (!htmlContent) throw new Error("Resume generation returned empty HTML");
+
+  console.log(`${colors.tool}[Puppeteer] Converting to PDF...${colors.reset}`);
   const pdfBuffer = await convertHTMLtoPDF(htmlContent);
-  
-  console.log(`${colors.success}✨ ATS Resume generated successfully!${colors.reset}\n`);
+  console.log(`${colors.success}✨ Resume PDF ready!${colors.reset}`);
   return pdfBuffer;
 }
 
