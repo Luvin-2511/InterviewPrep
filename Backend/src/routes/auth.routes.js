@@ -31,7 +31,7 @@ authRouter.get('/google/callback',
             secure: isProd,
             maxAge: 24 * 60 * 60 * 1000
         })
-        res.redirect(`${process.env.CLIENT_URL}/home`)
+        res.redirect(`${process.env.CLIENT_URL || 'http://localhost:5173'}/home?token=${token}`)
     }
 )
 

@@ -1,8 +1,16 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000',
+  baseURL: import.meta.env.VITE_API_URL || "http://localhost:3000",
   withCredentials: true,
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 export const setInterviewReport = async ({
@@ -20,6 +28,7 @@ export const setInterviewReport = async ({
     return response.data;
   } catch (err) {
     console.log(err);
+    throw err;
   }
 };
 
@@ -29,6 +38,7 @@ export const setReportById = async (reportId) => {
     return response.data;
   } catch (err) {
     console.log(err);
+    throw err;
   }
 };
 
@@ -38,6 +48,7 @@ export const setReports = async () => {
     return response.data;
   } catch (error) {
     console.log(error);
+    throw error;
   }
 };
 
@@ -51,5 +62,6 @@ export const setResumePdf = async ({ reportId }) => {
     return response.data;
   } catch (err) {
     console.log(err);
+    throw err;
   }
 };
